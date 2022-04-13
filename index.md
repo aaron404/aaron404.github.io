@@ -26,9 +26,7 @@ Syntax highlighted code block
 [Link](url) and ![Image](src)
 ```
 
-```geojson
-{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[-75.8767318725586,45.30405193889546],[-75.88574409484863,45.320349100701485],[-75.88982105255127,45.31835747675428],[-75.90801715850829,45.307492841072026],[-75.91157913208008,45.30550076526868],[-75.90115070343018,45.29677706347503],[-75.89836120605469,45.295478958526374],[-75.89574337005615,45.29348646056437],[-75.88445663452148,45.3007617581598],[-75.8767318725586,45.30405193889546]]]}}]}
-```
+<script src="https://gist.github.com/aaron404/c840e498b93456af1e4fdd5075456f23.js"></script>
 
 For more details see [Basic writing and formatting syntax](https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax).
 
