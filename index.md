@@ -27,6 +27,7 @@ Syntax highlighted code block
 ```
 
 <script src="https://gist.github.com/aaron404/c840e498b93456af1e4fdd5075456f23.js"></script>
+<script src="https://gist.github.com/aaron404/b4d42c7392592b0603bca1fbce62a811.js"></script>
 
 For more details see [Basic writing and formatting syntax](https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax).
 
