@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://aaron404.github.io/</loc>
+    </url>
+    <url>
+        <loc>https://aaron404.github.io/blog/</loc>
+    </url>
+    <url>
+        <loc>https://aaron404.github.io/blog/dnd-pt1/</loc>
+        <lastmod>2024-06-24</lastmod>
+    </url>
+    <url>
+        <loc>https://aaron404.github.io/blog/dnd-pt2-5/</loc>
+        <lastmod>2024-07-26</lastmod>
+    </url>
+    <url>
+        <loc>https://aaron404.github.io/blog/dnd-pt2/</loc>
+        <lastmod>2024-07-26</lastmod>
+    </url>
+    <url>
+        <loc>https://aaron404.github.io/blog/dnd-pt3/</loc>
+        <lastmod>2025-10-22</lastmod>
+    </url>
+    <url>
+        <loc>https://aaron404.github.io/blog/page/1/</loc>
+    </url>
+    <url>
+        <loc>https://aaron404.github.io/journal/</loc>
+        <lastmod>2025-10-22</lastmod>
+    </url>
+    <url>
+        <loc>https://aaron404.github.io/tags/</loc>
+    </url>
+</urlset>

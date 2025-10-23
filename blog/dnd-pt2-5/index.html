@@ -1,0 +1,271 @@
+<!doctype html><html lang=en><head><meta charset=UTF-8><meta content="IE=edge" http-equiv=X-UA-Compatible><meta content="text/html; charset=UTF-8" http-equiv=content-type><meta content="width=device-width,initial-scale=1,user-scalable=no" name=viewport><meta content="index, follow" name=robots><title>Making games play themselves with Rust Part 2.5: Proof by Exhaustive Search</title><meta content="Making games play themselves with Rust Part 2.5: Proof by Exhaustive Search" name=title><meta content=Aaron name=author><meta content="Follow me down the rabbit hole of datamining and image registration!" name=description><meta content=website property=og:type><meta content=https://aaron404.github.io/blog/dnd-pt2-5/ property=og:url><meta content="My Blog" property=og:site_name><meta content="Making games play themselves with Rust Part 2.5: Proof by Exhaustive Search" property=og:title><meta content="Follow me down the rabbit hole of datamining and image registration!" property=og:description><meta content=https://aaron404.github.io/blog/dnd-pt1/og_image.webp property=og:image><meta content=summary_large_image property=twitter:card><meta content=https://aaron404.github.io/blog/dnd-pt2-5/ property=twitter:url><meta content="Making games play themselves with Rust Part 2.5: Proof by Exhaustive Search" property=twitter:title><meta content="Follow me down the rabbit hole of datamining and image registration!" property=twitter:description><meta content=https://aaron404.github.io/blog/dnd-pt1/og_image.webp property=twitter:image><link href=https://aaron404.github.io/blog/dnd-pt2-5/ rel=canonical><link rel="shortcut icon" href=https://aaron404.github.io/favicon.ico type=image/x-icon><link href=https://aaron404.github.io/css/style.css rel=stylesheet><script defer src=https://aaron404.github.io/js/script.js></script><body><div class=wrapper><header><nav class=navBar><a href=/> home </a><a href=/journal> journal </a><a href=/blog> blog </a><div class=themeSwitch><button class="themeButton dark" onclick="setTheme('dark')" title="Dark mode"><svg class="icons icons__background"><use href=https://aaron404.github.io/icons.svg#darkMode></use></svg></button><button class="themeButton light" onclick="setTheme('light')" title="Light mode"><svg class="icons icons__background"><use href=https://aaron404.github.io/icons.svg#lightMode></use></svg></button></div></nav></header><main><time datetime=2024-07-26>Published on: <span class=metaData>2024-07-26</span></time><h1>Making games play themselves with Rust Part 2.5: Proof by Exhaustive Search</h1><h2>Table of contents</h2><ul><li><a href=https://aaron404.github.io/blog/dnd-pt2-5/#introduction>Introduction</a><li><a href=https://aaron404.github.io/blog/dnd-pt2-5/#what-almost-was>What Almost Was</a><li><a href=https://aaron404.github.io/blog/dnd-pt2-5/#what-didn-t-work>What Didn’t Work</a><li><a href=https://aaron404.github.io/blog/dnd-pt2-5/#datamining>Datamining</a><li><a href=https://aaron404.github.io/blog/dnd-pt2-5/#conclusion>Conclusion</a></ul><h1 id=introduction>Introduction</h1><p>This post represents a rabbit hole I went down while putting together the previous <a href=../dnd-pt2/>post</a>. If you haven’t seen it, I would recommend reading that first to add context to what I am doing here. This post documents the comical amount of effort I went through to verify a hypothesis I had about how to easily discriminate between monster and treasure sprites. It covers some of what didn’t work as well as what did, so feel free to skip around to what interests you most.<h1 id=what-almost-was>What Almost Was</h1><p>The goal was simple - given a 32x32 pixel tile, determine whether it contains a treasure sprite, a monster sprite, or empty. I immediately thought I could solve this by picking a pixel somewhere in the middle (that’s guaranteed to be covered by any monster or treasure sprite that could possibly be there) and checking if it was the color of the treasure sprite. If not, check it against the background color and if it didn’t match then it had to be a monster. I implemented this by picking a random pixel near the middle of the tile and it worked flawlessly parsing a couple hundred puzzles. I wrote a paragraph about it in the other blog post and moved on to the next section. I went for a bike ride, made dinner, then watched Jeopardy. It wasn’t until I was lying in bed later that evening that another thought came to mind.<blockquote><p>How can I be sure that the pixel I selected will never have any false positives?</blockquote><p>The treasure detection code is very simple…<pre class=language-rust data-lang=rust style=background:#191919;color:#e8d4c0><code class=language-rust data-lang=rust><span style=color:#db784d>match</span><span> pixel {
+</span><span>    background_color </span><span style=color:#db784d>=> </span><span>Tile::Empty,
+</span><span>    treasure_color </span><span style=color:#db784d>=> </span><span>Tile::Treasure,
+</span><span>    </span><span style=color:#db784d>_ => </span><span>Tile::Monster,
+</span><span>}
+</span></code></pre><p>… but it makes a very crucial assumption that none of the monsters have the same color as the treasure chest for the pixel that I am sampling. There are 18 different monsters, each with multiple animated frames. It’s possible in all the puzzles I parsed, there was one frame of one animation that I didn’t encounter which would be the failure case. As unlikely as this would be, the only way to be sure was with an exhaustive search. In this moment I had <a href=https://xkcd.com/356/ rel=noopener target=_blank>nerd-sniped</a> myself and nothing less than perfection would be adequate.<h1 id=what-didn-t-work>What Didn’t Work</h1><p>I figured the easiest way to build some confidence was to just parse a LOT more puzzles. I could have made some estimates about the number of animation frames in each animation and combined that with the rate at which I scrolled through puzzles to come up with an idea of how long I should search to give a statistically high degree of confidence that my search was complete. Instead, I captured screenshots of 25000 puzzles (surely that must be enough) and used a mask to separate the sprites from the background.<div class=textCenter><a class=img-link href=mask.webp><img alt="Plate, Mask, and Puzzle" src=mask.webp></a><div class=caption>From left to right: The plate, mask, and the puzzle used to make the mask.</div><br></div><p>After cropping each tile to a 32x32 region, I hashed each image and removed all the duplicates. This left me with 66 sprites, of which 15 were partial sprites that were actually parts of larger sprites that overflowed into neighboring tiles.<div class=textCenter><a class=img-link href=sprites.webp><img alt="The full set of sprites" src=sprites.webp></a><div class=caption>The full set of sprites (some are animated so it looks like there are duplicates but there are not), including the treasure chest, and their respective masks. I've crossed out a handful of masks that show partial results from large monsters that overflow into neighboring tiles.</div><br></div><p>If you got out your abacus and counted how many monsters there are, you’ll have noticed I came up shy of the 18 I mentioned previously. This is because quickly scrolling through puzzles only works for randomly generated puzzles and some monsters are exclusive to the curated puzzles. I essentially just ignored this problem at the time assuming that if it worked I could find a way to capture the other sprites later.<p>The next part of the solution involved overlaying all the masks together and computing the intersection (which pixels are white in EVERY mask). I could overlay this “supermask” on the treasure sprite to identify pixels which were candidates for sampling in the parsing code.<div class=textCenter><a class=img-link href=mask2.webp><img alt="Monster/Treasure discrimination mask" src=mask2.webp></a><div class=caption>From left to right: 'Supermask', treasure sprite, treasure-colored super mask.</div><br></div><p>This result was kinda cool, but I wasn’t satisfied yet. There were a couple problems with this solution:<ol><li>I sampled 25000 puzzles to find all the sprites. While this is probably “good enough”, it’s not an exhaustive search and there is still a change I missed a frame somewhere<li>Like I mentioned above, this doesn’t include monsters exclusive to the curated puzzles<li>(minor) Many of the sprites have transparent shadows which should be discarded from the masks.</ol><p>So while this was a fun attempt, I’ll have to get more serious if I want the real solution.<h1 id=datamining>Datamining</h1><p>If you’ve ever dug around in the files shipped with a game, you’ll find one of three things.<ol><li>The game assets are stored in normal file formats that are easy to read.<li>The game assets are wrapped in a proprietary format which often will encode metadata useful only in the context of the game.<li>The game assets are wrapped in proprietary formats and intentionally obfuscated specifically to prevent people like me from doing things like this.</ol><p>Fortunately Last Call BBS isn’t in category #3, but unforunately it is still #2, with proprietary encoding for the textures. I searched around online to see if anyone had figured out the format and luckily stumblede upon a <a href=https://www.reddit.com/r/lastcallbbs/comments/wwbgp0/whats_the_format_used_for_texture_files/ rel=noopener target=_blank>reddit post</a> describing everything I need.<p>If you have the game installed through Steam, the assets for Dungeons and Diagrams are stored in <code>Steam/steamapps/common/Last Call BBS/Content/Packed/textures/tokyo</code>. The .tex files contain the width and height of the sprite in pixels, and the image data which is stored in LZ4-compressed RGBA format. There is also some other miscellaneous data that is not needed.<table><thead><tr><th>Offset<th>Size (Bytes)<th>Description<tbody><tr><td>8<td>4<td>Width<tr><td>12<td>4<td>Height<tr><td>72<td>4<td>Payload size<tr><td>76<td>The rest<td>Image data</table><p>I used the <code>byteorder</code> crate which is useful for reading and writing binary data. It makes it easy to for example read 8 bytes into a <code>u64</code> with control over the endianness. I also used the <code>lz4_flex</code> crate to decompress the image data. I wrote a function which takes a path to a .tex file and another path for where to write the .png file.<pre class=language-rust data-lang=rust style=background:#191919;color:#e8d4c0><code class=language-rust data-lang=rust><span>
+</span><span style=color:#9a9082>use </span><span>std::{
+</span><span>    fs::File,
+</span><span>    io::{Cursor, Read, Seek, SeekFrom},
+</span><span>    path::{Path, PathBuf},
+</span><span>};
+</span><span>
+</span><span style=color:#9a9082>use </span><span>byteorder::{LittleEndian, ReadBytesExt};
+</span><span style=color:#9a9082>use </span><span>xcap::image;
+</span><span>
+</span><span style=color:#95cc5e>fn </span><span style=color:#60a365>convert_tex</span><span>(</span><span style=font-style:italic;color:#f8bb39>src_path</span><span>: </span><span style=color:#db784d>&</span><span>Path, </span><span style=font-style:italic;color:#f8bb39>dest_path</span><span>: PathBuf) {
+</span><span>    </span><span style=color:#95cc5e>let</span><span> path </span><span style=color:#db784d>= </span><span>PathBuf::from(src_path);
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Storage for the file and compressed image data
+</span><span>    </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> buffer </span><span style=color:#db784d>= </span><span style=font-style:italic;color:#db784d>Vec</span><span>::new();
+</span><span>    </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> compressed </span><span style=color:#db784d>= </span><span style=font-style:italic;color:#db784d>Vec</span><span>::new();
+</span><span>
+</span><span>    File::open(path).</span><span style=color:#95cc5e>unwrap</span><span>().</span><span style=color:#95cc5e>read_to_end</span><span>(</span><span style=color:#db784d>&mut</span><span> buffer).</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Cursor is used for file navigation, skip first 8 bytes
+</span><span>    </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> rdr </span><span style=color:#db784d>= </span><span>Cursor::new(buffer);
+</span><span>    rdr.</span><span style=color:#95cc5e>seek</span><span>(SeekFrom::Current(</span><span style=color:#eaae2e>8</span><span>)).</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Read width and height, then skip more metadata
+</span><span>    </span><span style=color:#95cc5e>let</span><span> width </span><span style=color:#db784d>=</span><span> rdr.read_u32::&LTLittleEndian>().</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>    </span><span style=color:#95cc5e>let</span><span> height </span><span style=color:#db784d>=</span><span> rdr.read_u32::&LTLittleEndian>().</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>    rdr.</span><span style=color:#95cc5e>seek</span><span>(SeekFrom::Current(</span><span style=color:#eaae2e>56</span><span>)).</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Read payload size, then read the payload
+</span><span>    </span><span style=color:#95cc5e>let</span><span> payload_size </span><span style=color:#db784d>=</span><span> rdr.read_u32::&LTLittleEndian>().</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>    compressed.</span><span style=color:#95cc5e>resize</span><span>(payload_size </span><span style=color:#db784d>as </span><span style=color:#95cc5e>usize</span><span>, </span><span style=color:#eaae2e>0</span><span>);
+</span><span>    rdr.</span><span style=color:#95cc5e>read_exact</span><span>(</span><span style=color:#db784d>&mut</span><span> compressed).</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Decompress the texture, flip it vertically, and save it
+</span><span>    </span><span style=color:#95cc5e>let</span><span> texture </span><span style=color:#db784d>= </span><span>lz4_flex::decompress(</span><span style=color:#db784d>&</span><span>compressed, </span><span style=color:#eaae2e>1000000</span><span>).</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>    </span><span style=color:#95cc5e>let</span><span> img </span><span style=color:#db784d>= </span><span>image::RgbaImage::from_raw(width, height, texture).</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>    </span><span style=color:#95cc5e>let</span><span> img </span><span style=color:#db784d>= </span><span>image::imageops::flip_vertical(</span><span style=color:#db784d>&</span><span>img);
+</span><span>
+</span><span>    img.</span><span style=color:#95cc5e>save</span><span>(dest_path).</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>}
+</span></code></pre><p>I also encountered some .array.tex files which store animated sprites. The format is pretty similar to .tex files but with an extra field describing the number of frames present in the file. I ran this function recursively through the entire Last Call BBS assets folder to produce a copy of the directory structure but with all the .tex’s replaced with .png files. Check out the spoils!<div class=textCenter><a class=img-link href=tiles_grid.webp><img alt="Tile plates" src=tiles_grid.webp></a><div class=caption>Tile plates, for both the unsolved (left) and solve (right) states</div><br></div><center> <video alt="All sprites" onclick="this.paused ? this.play() : this.pause();" autoplay loop src=sprites_all.webm></video> <div class=caption>All the sprites, including all animation frames. I composed them into a single video here so I didn't have to upload 18 separate gifs!</div> </center><div class=textCenter><a class=img-link href=walls_nums.webp><img alt=Extras src=walls_nums.webp></a><div class=caption>Walls (in both valid/invalid state), treasure, path marker, and number sprites.</div><br></div><p>In total, there are 66 unique monster sprites spread across 18 monsters. Because things can never be easy, all of the game assets are cropped and so don’t align nicely with the 33x33 pixel grid that the game board uses. I had to perform <a href=https://en.wikipedia.org/wiki/Image_registration rel=noopener target=_blank>image registration</a> so when I combine all the sprite masks they overlap correctly.<p>I first attempted to do the alignment using the <a href=https://imagemagick.org/ rel=noopener target=_blank>imagemagick</a> suite of tools, particularly <code>composite</code> for image overlay and <code>compare</code> for quantifying image similary. I needed some references images to compare against, so I manually captured one per monster. Then by sliding the sprite across the board image and finding the offset with the best similary score I could compute the correct offset for each monster with a simple bash script. A gif is worth a thousand words here.</p><center> <video alt="sprite alignment" onclick="this.paused ? this.play() : this.pause();" autoplay loop src=align.webm></video> <div class=caption>A small part of the alignment process, with the alignment highlighted.</div> </center><pre class=language-bash data-lang=bash style=background:#191919;color:#e8d4c0><code class=language-bash data-lang=bash><span style=color:#7a7267>#!/usr/bin/bash
+</span><span style=color:#f8bb39>cwd</span><span style=color:#db784d>=</span><span style=color:#eaae2e>$(</span><span style=color:#207241>pwd</span><span style=color:#eaae2e>)
+</span><span style=color:#f8bb39>target</span><span style=color:#db784d>=</span><span style=color:#eaae2e>"dnd.png"
+</span><span style=color:#f8bb39>best</span><span style=color:#db784d>=</span><span style=color:#eaae2e>1000
+</span><span>
+</span><span style=color:#7a7267># Recall the "tokyo" directory from earlier that houses all the sprites.
+</span><span style=color:#7a7267># Loop through each monster
+</span><span style=color:#db784d>for</span><span> monster </span><span style=color:#db784d>in </span><span>$(</span><span style=color:#207241>ls</span><span> tokyo)
+</span><span style=color:#db784d>do
+</span><span>    </span><span style=color:#95cc5e>echo </span><span style=color:#eaae2e>"checking $</span><span style=color:#f8bb39>monster</span><span style=color:#eaae2e>"
+</span><span>    </span><span style=color:#db784d>for</span><span> frame </span><span style=color:#db784d>in </span><span>$(</span><span style=color:#207241>ls </span><span>$</span><span style=color:#f8bb39>cwd</span><span>/tokyo/$</span><span style=color:#f8bb39>monster</span><span>)
+</span><span>    </span><span style=color:#db784d>do
+</span><span>        </span><span style=color:#95cc5e>echo </span><span style=color:#eaae2e>"  frame: $</span><span style=color:#f8bb39>frame</span><span style=color:#eaae2e>"
+</span><span>    </span><span style=color:#db784d>done
+</span><span>
+</span><span>    </span><span style=color:#7a7267># Loop an offset value for the sprite. I've chosen bounds that roughly align with the 
+</span><span>    </span><span style=color:#7a7267># game board to avoid searching in areas where the sprite couldn't possibly be.
+</span><span>    </span><span style=color:#db784d>for</span><span> y </span><span style=color:#db784d>in </span><span>$(</span><span style=color:#207241>seq</span><span> 140 420)
+</span><span>    </span><span style=color:#db784d>do
+</span><span>        </span><span style=color:#db784d>for</span><span> x </span><span style=color:#db784d>in </span><span>$(</span><span style=color:#207241>seq</span><span> 25 300)
+</span><span>        </span><span style=color:#db784d>do
+</span><span>            </span><span style=color:#7a7267># Use 'composite' to overlay the sprite on the main board screenshot
+</span><span>            </span><span style=color:#207241>magick</span><span> composite $</span><span style=color:#f8bb39>cwd</span><span>/tokyo/$</span><span style=color:#f8bb39>monster</span><span>/0.png</span><span style=font-style:italic;color:#f8bb39> -geometry</span><span> +$</span><span style=color:#f8bb39>x</span><span>+$</span><span style=color:#f8bb39>y </span><span>$</span><span style=color:#f8bb39>target</span><span> tmp/over.png
+</span><span>            </span><span style=color:#7a7267># Compute a match score using 'mean squared error' metric. It outputs to stderr
+</span><span>            </span><span style=color:#7a7267># for some reason hence the extra pipe wrangling. 'cut' pulls out the relevant
+</span><span>            </span><span style=color:#7a7267># data from the output for doing numerical comparison
+</span><span>            </span><span style=color:#f8bb39>score</span><span style=color:#db784d>=</span><span style=color:#eaae2e>$(</span><span style=color:#207241>magick</span><span style=color:#eaae2e> compare dnd.png tmp/over.png</span><span style=font-style:italic;color:#f8bb39> -metric</span><span style=color:#eaae2e> MSE tmp/dif.png 2</span><span style=color:#db784d>>&</span><span style=color:#eaae2e>1 </span><span style=color:#db784d>></span><span style=color:#eaae2e> /dev/null </span><span style=color:#db784d>| </span><span style=color:#207241>cut</span><span style=font-style:italic;color:#f8bb39> -f</span><span style=color:#eaae2e> 1</span><span style=font-style:italic;color:#f8bb39> -d </span><span style=color:#eaae2e>'.')
+</span><span>            </span><span style=color:#db784d>if </span><span style=color:#95cc5e>[[ </span><span>$</span><span style=color:#f8bb39>score </span><span style=font-style:italic;color:#f8bb39>-lt </span><span>$</span><span style=color:#f8bb39>best </span><span style=color:#95cc5e>]]
+</span><span>            </span><span style=color:#db784d>then
+</span><span>                </span><span style=color:#f8bb39>best</span><span style=color:#db784d>=</span><span style=color:#eaae2e>$</span><span style=color:#f8bb39>score
+</span><span>                </span><span style=color:#95cc5e>echo </span><span style=color:#eaae2e>"best: $</span><span style=color:#f8bb39>x </span><span style=color:#eaae2e>$</span><span style=color:#f8bb39>y </span><span style=color:#eaae2e>$</span><span style=color:#f8bb39>score</span><span style=color:#eaae2e>"
+</span><span>                </span><span style=color:#207241>cp</span><span> tmp/dif.png tmp/best.png
+</span><span>            </span><span style=color:#db784d>fi
+</span><span>        </span><span style=color:#db784d>done
+</span><span>    </span><span style=color:#db784d>done
+</span><span style=color:#db784d>done
+</span></code></pre><p>Here’s the output of the script after about 30 seconds. The 3 numbers are the x coordinate, y coordinate, and the match score (lower is better). You can see the match score decreasing over time.<pre style=background:#191919;color:#e8d4c0><code><span>checking bear
+</span><span>best: 25 140 26
+</span><span>best: 25 141 25
+</span><span>best: 25 143 24
+</span><span>best: 25 144 23
+</span><span>best: 25 145 22
+</span><span>best: 25 146 21
+</span><span>best: 25 148 20
+</span><span>best: 25 152 19
+</span><span>best: 25 155 18
+</span><span>best: 25 170 17
+</span><span>best: 25 346 16
+</span><span>best: 26 350 15
+</span></code></pre><p>It appeared to be working, but it was painfully slow. It took around 30 seconds to scan a single column of pixels out of ~275. This meant that in the worst case, it would take upwards of two hours to find a match. Even worse, this is only a single frame out of the 66 total monster frames, and I would have to check each frame against each reference puzzle, which comes out to 1188 searches. At up to two hours each it would have a worst case completion of approximately 100 days (feel free to laugh). Bash was a mistake. I had to go back to Rust.<blockquote><p>No hate to imagemagick here - I love their tools and used them to make several of the animations in both this post and the last. If you’re wondering why it was so slow, <code>compare</code> creates a new image and writes it to disk (not optional) for every comparison. It is designed for creating “diff” images.</blockquote><p>For the Rust implementation, I started with a simple function to compute the squared error between two pixels, ignoring any pixels that are not fully opaque. The pixel from the reference image is called the <code>haystack</code> and the pixel from the extracted sprite is <code>needle</code>.<pre class=language-rust data-lang=rust style=background:#191919;color:#e8d4c0><code class=language-rust data-lang=rust><span style=color:#9a9082>use </span><span>std::{ffi::{OsStr, OsString}, fs, path::Path};
+</span><span style=color:#9a9082>use </span><span>xcap::image::{</span><span style=color:#207241>self</span><span>, DynamicImage, GenericImageView};
+</span><span>
+</span><span style=color:#7a7267>// Compute the squared error between two 4-byte pixels. Ignore
+</span><span style=color:#7a7267>// pixels that are not fully opaque.
+</span><span style=color:#95cc5e>fn </span><span style=color:#60a365>compare_pixels</span><span>(</span><span style=font-style:italic;color:#f8bb39>haystack</span><span>: [</span><span style=color:#95cc5e>u8</span><span>; 4], </span><span style=font-style:italic;color:#f8bb39>needle</span><span>: [</span><span style=color:#95cc5e>u8</span><span>; 4]) -> </span><span style=color:#95cc5e>u64 </span><span>{
+</span><span>    </span><span style=color:#db784d>if</span><span> needle[</span><span style=color:#eaae2e>3</span><span>] </span><span style=color:#db784d>< </span><span style=color:#eaae2e>255 </span><span>{
+</span><span>        </span><span style=color:#eaae2e>0
+</span><span>    } </span><span style=color:#db784d>else </span><span>{
+</span><span>        </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> sum </span><span style=color:#db784d>= </span><span style=color:#eaae2e>0</span><span style=color:#95cc5e>u64</span><span>;
+</span><span>        </span><span style=color:#db784d>for</span><span> i </span><span style=color:#db784d>in </span><span style=color:#eaae2e>0</span><span style=color:#db784d>..</span><span style=color:#eaae2e>3 </span><span>{
+</span><span>            </span><span style=color:#95cc5e>let</span><span> e </span><span style=color:#db784d>=</span><span> haystack[i].</span><span style=color:#95cc5e>abs_diff</span><span>(needle[i]) </span><span style=color:#db784d>as </span><span style=color:#95cc5e>u64</span><span>;
+</span><span>            sum </span><span style=color:#db784d>+=</span><span> e </span><span style=color:#db784d>*</span><span> e;
+</span><span>        }
+</span><span>        sum
+</span><span>    }
+</span><span>}
+</span></code></pre><p>Next, a function that handled sliding our needle across the haystack. I computed bounds for the sliding which prevent the needle from being partially outside the bounds of the haystack.<pre class=language-rust data-lang=rust style=background:#191919;color:#e8d4c0><code class=language-rust data-lang=rust><span style=color:#7a7267>// Compute sum of square error between two images at every offset, return position of lowest score
+</span><span style=color:#95cc5e>fn </span><span style=color:#60a365>compare_images</span><span>(</span><span style=font-style:italic;color:#f8bb39>haystack</span><span>: </span><span style=color:#db784d>&</span><span>DynamicImage, </span><span style=font-style:italic;color:#f8bb39>needle</span><span>: </span><span style=color:#db784d>&</span><span>DynamicImage) -> (</span><span style=color:#95cc5e>u64</span><span>, (</span><span style=color:#95cc5e>u32</span><span>, </span><span style=color:#95cc5e>u32</span><span>)) {
+</span><span>    </span><span style=color:#95cc5e>let</span><span> nw </span><span style=color:#db784d>=</span><span> needle.</span><span style=color:#95cc5e>width</span><span>();
+</span><span>    </span><span style=color:#95cc5e>let</span><span> nh </span><span style=color:#db784d>=</span><span> needle.</span><span style=color:#95cc5e>height</span><span>();
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Keep track of best score and the position it was achieved
+</span><span>    </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> best_score: </span><span style=color:#95cc5e>u64 </span><span style=color:#db784d>= </span><span style=color:#95cc5e>u64</span><span>::</span><span style=color:#db784d>MAX</span><span>;
+</span><span>    </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> best_pos: (</span><span style=color:#95cc5e>u32</span><span>, </span><span style=color:#95cc5e>u32</span><span>) </span><span style=color:#db784d>= </span><span>(</span><span style=color:#eaae2e>0</span><span>, </span><span style=color:#eaae2e>0</span><span>);
+</span><span>    </span><span style=color:#7a7267>// Slide the needle image over the haystack
+</span><span>    </span><span style=color:#db784d>for</span><span> x </span><span style=color:#db784d>in </span><span style=color:#eaae2e>0</span><span style=color:#db784d>..</span><span>haystack.</span><span style=color:#95cc5e>width</span><span>() </span><span style=color:#db784d>-</span><span> nw {
+</span><span>        </span><span style=color:#db784d>for</span><span> y </span><span style=color:#db784d>in </span><span style=color:#eaae2e>0</span><span style=color:#db784d>..</span><span>haystack.</span><span style=color:#95cc5e>height</span><span>() </span><span style=color:#db784d>-</span><span> nh {
+</span><span>            </span><span style=color:#7a7267>// Create a sub-view of the haystack
+</span><span>            </span><span style=color:#95cc5e>let</span><span> view </span><span style=color:#db784d>=</span><span> haystack.</span><span style=color:#95cc5e>view</span><span>(x, y, nw, nh);
+</span><span>
+</span><span>            </span><span style=color:#7a7267>// Copmute sum of squared errors
+</span><span>            </span><span style=color:#95cc5e>let</span><span> sse </span><span style=color:#db784d>=</span><span> view
+</span><span>                .</span><span style=color:#95cc5e>pixels</span><span>()
+</span><span>                .</span><span style=color:#95cc5e>map</span><span>(|(_, _, </span><span style=font-style:italic;color:#f8bb39>p</span><span>)| p)
+</span><span>                .</span><span style=color:#95cc5e>zip</span><span>(needle.</span><span style=color:#95cc5e>pixels</span><span>().</span><span style=color:#95cc5e>map</span><span>(|(_, _, </span><span style=font-style:italic;color:#f8bb39>p</span><span>)| p))
+</span><span>                .</span><span style=color:#95cc5e>fold</span><span>(</span><span style=color:#eaae2e>0</span><span>, |</span><span style=font-style:italic;color:#f8bb39>acc</span><span>, (</span><span style=font-style:italic;color:#f8bb39>p1</span><span>, </span><span style=font-style:italic;color:#f8bb39>p2</span><span>)| acc </span><span style=color:#db784d>+ </span><span style=color:#95cc5e>compare_pixels</span><span>(p1.</span><span style=color:#eaae2e>0</span><span>, p2.</span><span style=color:#eaae2e>0</span><span>));
+</span><span>
+</span><span>            </span><span style=color:#7a7267>// Check if we found a better match
+</span><span>            </span><span style=color:#db784d>if</span><span> sse </span><span style=color:#db784d><</span><span> best_score {
+</span><span>                </span><span style=color:#7a7267>// Perfect match, return early
+</span><span>                </span><span style=color:#db784d>if</span><span> sse </span><span style=color:#db784d>== </span><span style=color:#eaae2e>0 </span><span>{
+</span><span>                    </span><span style=color:#db784d>return </span><span>(sse, (x, y));
+</span><span>                }
+</span><span>                best_score </span><span style=color:#db784d>=</span><span> sse;
+</span><span>                best_pos </span><span style=color:#db784d>= </span><span>(x, y);
+</span><span>            }
+</span><span>        }
+</span><span>    }
+</span><span>    </span><span style=color:#db784d>return </span><span>(best_score, best_pos);
+</span><span>}
+</span></code></pre><p>And lastly, a high-level function that iterated over the directories and printed out some results.<pre class=language-rust data-lang=rust style=background:#191919;color:#e8d4c0><code class=language-rust data-lang=rust><span style=color:#db784d>pub </span><span style=color:#95cc5e>fn </span><span style=color:#60a365>find_monster_offsets</span><span>() {
+</span><span>    </span><span style=color:#7a7267>// Iterate over each monster image folder
+</span><span>    </span><span style=color:#db784d>for</span><span> dir </span><span style=color:#db784d>in </span><span>fs::read_dir(</span><span style=color:#eaae2e>"tokyo"</span><span>).</span><span style=color:#95cc5e>unwrap</span><span>() {
+</span><span>        </span><span style=color:#95cc5e>let</span><span> dir </span><span style=color:#db784d>=</span><span> dir.</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>        </span><span style=color:#95cc5e>let</span><span> monster </span><span style=color:#db784d>=</span><span> dir.</span><span style=color:#95cc5e>file_name</span><span>();
+</span><span>
+</span><span>        print!(</span><span style=color:#eaae2e>"{: &LT12}"</span><span>, monster.</span><span style=color:#95cc5e>to_string_lossy</span><span>());
+</span><span>
+</span><span>        </span><span style=color:#7a7267>// Open reference image
+</span><span>        </span><span style=color:#95cc5e>let</span><span> board_path </span><span style=color:#db784d>= </span><span>Path::new(</span><span style=color:#eaae2e>"monster_refs"</span><span>).</span><span style=color:#95cc5e>join</span><span>(Path::new(</span><span style=color:#db784d>&</span><span>monster).</span><span style=color:#95cc5e>with_extension</span><span>(</span><span style=color:#eaae2e>"png"</span><span>));
+</span><span>        </span><span style=color:#db784d>if </span><span style=color:#95cc5e>let </span><span style=font-style:italic;color:#db784d>Ok</span><span>(board) </span><span style=color:#db784d>= </span><span>image::open(board_path) {
+</span><span>            </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> best_score </span><span style=color:#db784d>= </span><span style=color:#95cc5e>u64</span><span>::</span><span style=color:#db784d>MAX</span><span>;
+</span><span>            </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> best_pos </span><span style=color:#db784d>= </span><span>(</span><span style=color:#eaae2e>0</span><span>, </span><span style=color:#eaae2e>0</span><span>);
+</span><span>            </span><span style=color:#95cc5e>let </span><span style=color:#db784d>mut</span><span> best_frame </span><span style=color:#db784d>= </span><span>OsString::new();
+</span><span>
+</span><span>            </span><span style=color:#7a7267>// Iterate over each frame to find best match
+</span><span>            </span><span style=color:#db784d>for</span><span> frame </span><span style=color:#db784d>in </span><span>fs::read_dir(dir.</span><span style=color:#95cc5e>path</span><span>()).</span><span style=color:#95cc5e>unwrap</span><span>() {
+</span><span>                </span><span style=color:#95cc5e>let</span><span> frame </span><span style=color:#db784d>=</span><span> frame.</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>                </span><span style=color:#95cc5e>let</span><span> monster_img </span><span style=color:#db784d>= </span><span>image::open(frame.</span><span style=color:#95cc5e>path</span><span>()).</span><span style=color:#95cc5e>unwrap</span><span>();
+</span><span>                </span><span style=color:#95cc5e>let </span><span>(score, pos) </span><span style=color:#db784d>= </span><span style=color:#95cc5e>compare_images</span><span>(</span><span style=color:#db784d>&</span><span>board, </span><span style=color:#db784d>&</span><span>monster_img);
+</span><span>                </span><span style=color:#db784d>if</span><span> score </span><span style=color:#db784d><</span><span> best_score {
+</span><span>                    best_score </span><span style=color:#db784d>=</span><span> score;
+</span><span>                    best_pos </span><span style=color:#db784d>=</span><span> pos;
+</span><span>                    best_frame </span><span style=color:#db784d>=</span><span> frame.</span><span style=color:#95cc5e>file_name</span><span>();
+</span><span>                }
+</span><span>            }
+</span><span>            println!(
+</span><span>                </span><span style=color:#eaae2e>"</span><span style=color:#db784d>{: &LT6} {best_pos:?} {best_score}</span><span style=color:#eaae2e>"</span><span>,
+</span><span>                best_frame.</span><span style=color:#95cc5e>to_string_lossy</span><span>()
+</span><span>            );
+</span><span>        } </span><span style=color:#db784d>else </span><span>{
+</span><span>            println!(</span><span style=color:#eaae2e>"--  skipped  --"</span><span>);
+</span><span>            </span><span style=color:#db784d>continue</span><span>;
+</span><span>        }
+</span><span>    }
+</span><span>}
+</span></code></pre><p>Running <code>find_monster_offsets()</code> immediately proved to be several orders of magnitude faster than the bash script (unsurprisingly). It took 45 seconds to complete, and if I needed to run it more than once I could probably optimize it substantially. For each monster, it told me which frame of the animation was found in the screenshot, and the offset from the top left corner of the board to the monster. The score is the sum of squared errors mentioned earlier, which was 0 (perfect match) in all cases.<pre style=background:#191919;color:#e8d4c0><code><span>monster   frame  position    score
+</span><span>ogre      1.png  (211, 267)  0
+</span><span>slime     0.png  ( 51, 378)  0
+</span><span>golem     0.png  ( 81, 399)  0
+</span><span>insectoid 0.png  ( 49, 364)  0
+</span><span>lich      3.png  (145, 304)  0
+</span><span>lookseer  0.png  (283, 339)  0
+</span><span>king      1.png  ( 78, 298)  0
+</span><span>bear      0.png  ( 44, 270)  0
+</span><span>goblin    0.png  ( 48, 193)  0
+</span><span>minotaur  0.png  ( 46, 395)  0
+</span><span>demon     0.png  (211, 257)  0
+</span><span>goat      0.png  ( 48, 234)  0
+</span><span>skeleton  0.png  (279, 172)  0
+</span><span>kobold    0.png  ( 45, 291)  0
+</span><span>cultist   0.png  ( 53, 366)  0
+</span><span>squid     0.png  (246, 402)  0
+</span><span>imp       0.png  ( 50, 202)  0
+</span><span>chest     0.png  (284, 309)  0
+</span></code></pre><p>I manually verified a couple of these as a sanity check, and they seemed to be correct. To visualize what these numbers even mean, consider the demon sprite. It was found with an offset of (211,257) which is the distance from the top left of the image to the top left of the blue rectangle.<div class=textCenter><a class=img-link href=sprite_offset.webp><img alt="sprite offset" src=sprite_offset.webp></a><div class=caption>The blue rectangle represents the bounding box of the full sprite. It touches a total of 6 tiles.</div><br></div><p>If you consider which tile that monster is “on”, it’s the 4th row and 6th column. Annoyingly, none of the corners of the sprite were within that tile, so I used the center of the sprite to identify the tile it was actually on. Based on that, the offset from the top left corner of the monster’s tile to the top left corner of the sprite’s bounding box was (-3, -17). Small sprites that fit within a single tile would have positive offsets.<p>Computing the corrected offset was pretty straightforward:<pre class=language-rust data-lang=rust style=background:#191919;color:#e8d4c0><code class=language-rust data-lang=rust><span style=color:#95cc5e>const </span><span style=color:#db784d>TILES_OFFSET</span><span>: (</span><span style=color:#95cc5e>u32</span><span>, </span><span style=color:#95cc5e>u32</span><span>) </span><span style=color:#db784d>= </span><span>(</span><span style=color:#eaae2e>49</span><span>, </span><span style=color:#eaae2e>175</span><span>);
+</span><span style=color:#95cc5e>const </span><span style=color:#db784d>TILE_STRIDE</span><span>: </span><span style=color:#95cc5e>u32 </span><span style=color:#db784d>= </span><span style=color:#eaae2e>33</span><span>;
+</span><span style=color:#95cc5e>fn </span><span style=color:#60a365>correct_offset</span><span>(</span><span style=font-style:italic;color:#f8bb39>size</span><span>: (</span><span style=font-style:italic;color:#f8bb39>u32</span><span>, </span><span style=font-style:italic;color:#f8bb39>u32</span><span>), </span><span style=font-style:italic;color:#f8bb39>offset</span><span>: (</span><span style=font-style:italic;color:#f8bb39>u32</span><span>, </span><span style=font-style:italic;color:#f8bb39>u32</span><span>)) -> (</span><span style=color:#95cc5e>i32</span><span>, </span><span style=color:#95cc5e>i32</span><span>) {
+</span><span>    </span><span style=color:#95cc5e>let</span><span> center_x </span><span style=color:#db784d>=</span><span> size.</span><span style=color:#eaae2e>0 </span><span style=color:#db784d>/ </span><span style=color:#eaae2e>2</span><span>;
+</span><span>    </span><span style=color:#95cc5e>let</span><span> center_y </span><span style=color:#db784d>=</span><span> size.</span><span style=color:#eaae2e>1 </span><span style=color:#db784d>/ </span><span style=color:#eaae2e>2</span><span>;
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Normalize coordinates so first tile is at (0, 0), and use the
+</span><span>    </span><span style=color:#7a7267>// center of the sprite rather than its corner to keep it positive.
+</span><span>    </span><span style=color:#95cc5e>let</span><span> offset_x </span><span style=color:#db784d>=</span><span> offset.</span><span style=color:#eaae2e>0 </span><span style=color:#db784d>+</span><span> center_x </span><span style=color:#db784d>- TILES_OFFSET</span><span>.</span><span style=color:#eaae2e>0</span><span>;
+</span><span>    </span><span style=color:#95cc5e>let</span><span> offset_y </span><span style=color:#db784d>=</span><span> offset.</span><span style=color:#eaae2e>1 </span><span style=color:#db784d>+</span><span> center_y </span><span style=color:#db784d>- TILES_OFFSET</span><span>.</span><span style=color:#eaae2e>1</span><span>;
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Modulo shifts the value to something within the top-left tile.
+</span><span>    </span><span style=color:#95cc5e>let</span><span> offset_x </span><span style=color:#db784d>=</span><span> offset_x </span><span style=color:#db784d>% TILE_STRIDE</span><span>;
+</span><span>    </span><span style=color:#95cc5e>let</span><span> offset_y </span><span style=color:#db784d>=</span><span> offset_y </span><span style=color:#db784d>% TILE_STRIDE</span><span>;
+</span><span>
+</span><span>    </span><span style=color:#7a7267>// Subtract the centerpoint to get the corrected offset
+</span><span>    (center_x </span><span style=color:#db784d>as </span><span style=color:#95cc5e>i32 </span><span style=color:#db784d>-</span><span> offset_x </span><span style=color:#db784d>as </span><span style=color:#95cc5e>i32</span><span>, center_y </span><span style=color:#db784d>as </span><span style=color:#95cc5e>i32 </span><span style=color:#db784d>-</span><span> offset_y </span><span style=color:#db784d>as </span><span style=color:#95cc5e>i32</span><span>)
+</span><span>}
+</span></code></pre><p>The corrected output looked like this. The result for demon matches what I calculated by hand which was promising.<pre style=background:#191919;color:#e8d4c0><code><span>ogre      1.png  ( -3,  -7) 0
+</span><span>slime     0.png  (  2,   5) 0
+</span><span>golem     0.png  ( -1,  -7) 0
+</span><span>insectoid 0.png  (  0,  -9) 0
+</span><span>lich      3.png  ( -3,  -3) 0
+</span><span>lookseer  0.png  (  3,  -1) 0
+</span><span>king      1.png  ( -4,  -9) 0
+</span><span>bear      0.png  ( -5,  -4) 0
+</span><span>goblin    0.png  ( -1, -15) 0
+</span><span>minotaur  0.png  ( -3, -11) 0
+</span><span>demon     0.png  ( -3, -17) 0
+</span><span>goat      0.png  ( -1,  -7) 0
+</span><span>skeleton  0.png  ( -1,  -3) 0
+</span><span>kobold    0.png  ( -4, -16) 0
+</span><span>cultist   0.png  (  4,  -7) 0
+</span><span>squid     0.png  ( -1,  -4) 0
+</span><span>imp       0.png  (  1,  -6) 0
+</span><span>chest     0.png  (  4,   2) 0
+</span></code></pre><p>Now I could finally combine all the masks and compute their intersection. I returned to <code>imagemagick</code>s <code>convert</code> tool to simultaneously resize all the sprites to a common size and offset the sprites so they are properly registered with one another. Massaging the previous output slightly so each line reads like <code>cultist,+4-7</code> let me easily consume it with a bash script.<pre class=language-bash data-lang=bash style=background:#191919;color:#e8d4c0><code class=language-bash data-lang=bash><span style=color:#f8bb39>out_dir</span><span style=color:#db784d>=</span><span style=color:#eaae2e>script_output/resize
+</span><span>
+</span><span style=color:#7a7267># Mask of current sprite
+</span><span style=color:#f8bb39>mask</span><span style=color:#db784d>=</span><span style=color:#eaae2e>$</span><span style=color:#f8bb39>out_dir</span><span style=color:#eaae2e>/mask.png
+</span><span>
+</span><span style=color:#7a7267># Cumulative combined mask
+</span><span style=color:#f8bb39>supermask</span><span style=color:#db784d>=</span><span style=color:#eaae2e>$</span><span style=color:#f8bb39>out_dir</span><span style=color:#eaae2e>/supermask.png
+</span><span>
+</span><span style=color:#207241>mkdir</span><span style=font-style:italic;color:#f8bb39> -p </span><span>$</span><span style=color:#f8bb39>out_dir
+</span><span>
+</span><span style=color:#7a7267># Start with a 32x32 white canvas
+</span><span style=color:#207241>convert</span><span style=font-style:italic;color:#f8bb39> -size</span><span> 32x32 canvas:white</span><span style=font-style:italic;color:#f8bb39> -alpha</span><span> on $</span><span style=color:#f8bb39>supermask
+</span><span>
+</span><span style=color:#db784d>for</span><span> line </span><span style=color:#db784d>in </span><span>$</span><span style=color:#f8bb39>offsets
+</span><span style=color:#db784d>do
+</span><span>    </span><span style=color:#7a7267># Parse monster name and x/y offsets
+</span><span>    </span><span style=color:#f8bb39>monster</span><span style=color:#db784d>=</span><span style=color:#eaae2e>$(</span><span style=color:#95cc5e>echo </span><span style=color:#eaae2e>$</span><span style=color:#f8bb39>line </span><span style=color:#db784d>| </span><span style=color:#207241>cut</span><span style=font-style:italic;color:#f8bb39> -d </span><span style=color:#eaae2e>','</span><span style=font-style:italic;color:#f8bb39> -f</span><span style=color:#eaae2e> 1)
+</span><span>    </span><span style=color:#f8bb39>offset_x</span><span style=color:#db784d>=</span><span style=color:#eaae2e>$(</span><span style=color:#95cc5e>echo </span><span style=color:#eaae2e>$</span><span style=color:#f8bb39>line </span><span style=color:#db784d>| </span><span style=color:#207241>cut</span><span style=font-style:italic;color:#f8bb39> -d </span><span style=color:#eaae2e>','</span><span style=font-style:italic;color:#f8bb39> -f</span><span style=color:#eaae2e> 2)
+</span><span>    </span><span style=color:#f8bb39>offset_y</span><span style=color:#db784d>=</span><span style=color:#eaae2e>$(</span><span style=color:#95cc5e>echo </span><span style=color:#eaae2e>$</span><span style=color:#f8bb39>line </span><span style=color:#db784d>| </span><span style=color:#207241>cut</span><span style=font-style:italic;color:#f8bb39> -d </span><span style=color:#eaae2e>','</span><span style=font-style:italic;color:#f8bb39> -f</span><span style=color:#eaae2e> 3)
+</span><span>    </span><span style=color:#95cc5e>echo </span><span style=color:#eaae2e>"$</span><span style=color:#f8bb39>monster</span><span style=color:#eaae2e>"
+</span><span>
+</span><span>    </span><span style=color:#db784d>for</span><span> frame </span><span style=color:#db784d>in </span><span>$(</span><span style=color:#207241>ls</span><span> tokyo/$</span><span style=color:#f8bb39>monster</span><span>)
+</span><span>    </span><span style=color:#db784d>do
+</span><span>        </span><span style=color:#95cc5e>echo </span><span style=color:#eaae2e>"  $</span><span style=color:#f8bb39>frame</span><span style=color:#eaae2e>"
+</span><span>        </span><span style=color:#7a7267># Resize, apply offset, cull transparent pixels, save mask
+</span><span>        </span><span style=color:#207241>magick</span><span> convert \
+</span><span style=font-style:italic;color:#f8bb39>            -background</span><span> none</span><span style=font-style:italic;color:#f8bb39> -extent</span><span> 32x32+$</span><span style=color:#f8bb39>offset_x</span><span>+$</span><span style=color:#f8bb39>offset_y </span><span>\
+</span><span style=font-style:italic;color:#f8bb39>            -channel</span><span> alpha</span><span style=font-style:italic;color:#f8bb39> -threshold</span><span> 99% +channel \
+</span><span style=font-style:italic;color:#f8bb39>            -alpha</span><span> extract</span><span style=font-style:italic;color:#f8bb39> -alpha</span><span> on tokyo/$</span><span style=color:#f8bb39>monster</span><span>/$</span><span style=color:#f8bb39>frame </span><span>$</span><span style=color:#f8bb39>mask
+</span><span>
+</span><span>        </span><span style=color:#7a7267># AND the mask with the supermask
+</span><span>        </span><span style=color:#207241>magick</span><span> composite $</span><span style=color:#f8bb39>mask </span><span>$</span><span style=color:#f8bb39>supermask</span><span style=font-style:italic;color:#f8bb39> -compose</span><span> dst-in $</span><span style=color:#f8bb39>supermask
+</span><span>    </span><span style=color:#db784d>done
+</span><span style=color:#db784d>done
+</span></code></pre><p>I had so much fun playing around with Imagemagick that I spent a few hours writing another script specifically to generate this gif of the mask creation.</p><center> <video alt="mask generation" onclick="this.paused ? this.play() : this.pause();" autoplay loop src=combine_masks.webm></video> <div class=caption>Each successive mask subtracts a few pixels until we are left with a just a handful.</div> </center><p>Taking the final mask and multiplying it with the treasure chest revealed a similar but still noticeably different result than the previous attempt:<div class=textCenter><a class=img-link href=supermask.webp><img alt="Monster/Treasure discrimination mask" src=supermask.webp></a><div class=caption>From left to right: 'Supermask', treasure sprite, treasure-colored super mask.</div><br></div><p>At this point I was confident that I hadn’t missed anything so all that was left was to choose one of the remaining pixels arbitrarily as my monster discriminant. I chose the one at coordinate (16, 12), as an omage to the wonderful song <a href="https://www.youtube.com/watch?v=jRHQPG1xd9o" rel=noopener target=_blank>1612</a> by Vulfpeck, featuring Antuan Stanley. I’ve highlighted it in blue to make it more apparent.<div class=textCenter><a class=img-link href=sample.webp><img alt="SIX! TEEN! TWELVE!" src=sample.webp></a></div><p>Lastly, to put things in perspective, here’s an image of the board with the 64 monster sampling points highlighted. I used 2x2 highlight pixels so it’s easier to see, but when parsing I am only examining a single pixel per tile to determine its contents.<div class=textCenter><a class=img-link href=tile_sampling.webp><img alt="Tile sampling" src=tile_sampling.webp></a><div class=caption>The 64 pixels we need</div><br></div><h1 id=conclusion>Conclusion</h1><p>I hope you enjoyed this detour. I may do some more posts like this in the future for niche things I find interesting that I know probably don’t appeal to everyone. It was a lot of work for what boiled down to the computation of two small numbers. I could have just stuck with my gut from the start, but it lacked the satisfaction of rigorous proof. Stay tuned for part 3 of the series where I attempt to finally solve a puzzle!<p class=tagsData></main><footer><hr><div class=footContainer><div class=footLeft><p>Built with <a rel="noopener noreferrer" href=https://www.getzola.org target=_blank>Zola</a> using <a rel="noopener noreferrer" href=https://github.com/Speyll/anemone target=_blank>anemone</a> theme.<br></div></div></footer></div>
